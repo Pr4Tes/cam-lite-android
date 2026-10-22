@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.4.0 — 22/10/2026
+
+- Consulta assíncrona e manual no canal estável, limite automático de 24 horas inclusive falhas, preferências persistidas e publicação autenticada em cache.
+- Tela Atualizações, notas, progresso, cancelamento, adiamento e notificações oficiais fora do Monitor; permissões negadas não bloqueiam a tela.
+- RSA-3072 antes do JSON, origem HTTPS restrita, validade e antidowngrade, tamanho/SHA-256 e identidade/certificado/ABI/Android verificados antes do instalador.
+- Download somente solicitado; PackageInstaller com confirmação Android, autorização de origem externa e revalidação. Sem instalação silenciosa.
+- Pacote, assinatura permanente, armazenamento criptografado e monitoramento preservados. Release sem flag debuggable; versionCode 5. Sem dependências de execução novas.
+- Build release, lint sem erros e 22 testes de lógica passaram. Teste físico manual e publicação pública estável permanecem pendentes; nenhuma estabilidade 24/7 foi declarada.
+
 ## 1.3 — 12/10/2026
 
 - Monitor pede horizontal na entrada/abertura direta; preferência de orientação anterior preservada nas telas administrativas.

@@ -26,6 +26,8 @@ import android.view.WindowInsets
 import android.view.WindowInsetsController
 import android.view.WindowManager
 import android.widget.*
+import com.camlite.android.updates.UpdateManager
+import com.camlite.android.updates.UpdateScreen
 
 class MainActivity : Activity() {
     private lateinit var store: SecureStore
@@ -48,9 +50,16 @@ class MainActivity : Activity() {
     private val clockReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) { updateBrightness() }
     }
+    private lateinit var updates: UpdateManager
+    private lateinit var updateScreen: UpdateScreen
+    private var requestedUpdatePanel = false
+    private val updateListener: () -> Unit = { if (foreground) updateScreen.refresh() }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        updates = UpdateManager.get(this)
+        updateScreen = UpdateScreen(this,updates) { monitor }
+        requestedUpdatePanel = intent.getBooleanExtra("open_updates",false)
         // RTSP errors can contain URLs. Suppress library logs to protect embedded credentials.
         androidx.media3.common.util.Log.setLogLevel(androidx.media3.common.util.Log.LOG_LEVEL_OFF)
         window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
@@ -90,9 +99,25 @@ class MainActivity : Activity() {
         if (Build.VERSION.SDK_INT >= 33) registerReceiver(clockReceiver, filter, Context.RECEIVER_NOT_EXPORTED) else registerReceiver(clockReceiver, filter)
         clockRegistered = true
         if (monitor) buildMonitor() else updateBrightness()
+        updates.monitor(monitor)
+        updates.observe(updateListener)
+        if (requestedUpdatePanel && !monitor) { requestedUpdatePanel=false; updateScreen.show() }
+    }
+    override fun onResume() { super.onResume(); if (::updateScreen.isInitialized) updateScreen.refresh() }
+    override fun onRequestPermissionsResult(requestCode:Int, permissions:Array<out String>, grantResults:IntArray) {
+        super.onRequestPermissionsResult(requestCode,permissions,grantResults)
+        if(requestCode==1400) updateScreen.refresh()
+    }
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        if (intent.getBooleanExtra("open_updates",false)) {
+            requestedUpdatePanel=true
+            if (!monitor && foreground) { requestedUpdatePanel=false; updateScreen.show() }
+        }
     }
     override fun onStop() {
         foreground = false
+        updates.unobserve(updateListener)
         screenHandler.removeCallbacksAndMessages(null)
         if (clockRegistered) { unregisterReceiver(clockReceiver); clockRegistered = false }
         monitorDialog?.dismiss(); monitorDialog = null
@@ -102,7 +127,7 @@ class MainActivity : Activity() {
         networkMonitor.stop()
         super.onStop()
     }
-    override fun onDestroy() { stopSessions(); testSession?.stop(); networkMonitor.stop(); super.onDestroy() }
+    override fun onDestroy() { updateScreen.close(); stopSessions(); testSession?.stop(); networkMonitor.stop(); super.onDestroy() }
     override fun onSaveInstanceState(outState: Bundle) { outState.putBoolean("monitor", monitor); super.onSaveInstanceState(outState) }
     override fun onConfigurationChanged(newConfig: Configuration) { super.onConfigurationChanged(newConfig); root.requestLayout() }
     override fun dispatchTouchEvent(event: MotionEvent): Boolean {
@@ -130,6 +155,7 @@ class MainActivity : Activity() {
         sessions.forEach { it.stop() }; sessions.clear(); mosaic = null
     }
     private fun showScreen() {
+        updates.monitor(monitor)
         applyOrientation()
         stopSessions()
         root.removeAllViews()
@@ -158,15 +184,18 @@ class MainActivity : Activity() {
         }
         list.addView(button("Adicionar câmera") { cameraEditor(null) }.apply { isEnabled = config.cameras.size < 4 && !loadFailed })
         list.addView(button("Configurações") { settingsDialog() })
+        list.addView(button("Atualizações") { updateScreen.show() })
         list.addView(button("Informações e ajuda") { helpDialog() })
         list.addView(text("Em aparelhos antigos: H.264, substream de 640 × 360/480 e 10–15 FPS.", 14f))
         root.addView(ScrollView(this).apply { addView(list) }, FrameLayout.LayoutParams(-1, -1))
+        if (requestedUpdatePanel) { requestedUpdatePanel=false; updateScreen.show() }
     }
     private fun move(index: Int, offset: Int) {
         java.util.Collections.swap(config.cameras, index, index + offset)
         if (save()) showScreen() else java.util.Collections.swap(config.cameras, index, index + offset)
     }
     private fun buildMonitor() {
+        updates.monitor(true)
         applyOrientation()
         stopSessions(); root.removeAllViews()
         val grid = MosaicView(this, config.settings.layout)
@@ -332,6 +361,7 @@ class MainActivity : Activity() {
     private fun settingsDialog() {
         val old = config.settings.copy(screen = config.settings.screen.copy())
         val form = column()
+        form.addView(button("Atualizações") { updateScreen.show() })
         val layout = spinner(form, "Layout (mostra as primeiras câmeras na ordem)", arrayOf("1 câmera", "2 câmeras", "3 câmeras", "4 câmeras"), old.layout - 1)
         val orientation = spinner(form, "Orientação das telas de configuração (Monitor sempre horizontal)", arrayOf("Automática", "Horizontal", "Vertical"), old.orientation.coerceIn(0, 2))
         val performance = spinner(form, "Desempenho", PerformanceProfile.entries.map { it.label }.toTypedArray(), old.performance.ordinal)
@@ -398,7 +428,7 @@ class MainActivity : Activity() {
         return if (hour in 0..23 && minute in 0..59) hour * 60 + minute else null
     }
     private fun helpDialog() {
-        AlertDialog.Builder(this).setTitle("Cam Lite Android 1.3").setMessage(
+        AlertDialog.Builder(this).setTitle("Cam Lite Android 1.4.0").setMessage(
             "Monitor local de até 4 câmeras RTSP H.264, via TCP. Sem nuvem, conta ou gravação.\n\n" +
             "Cadastre IP, usuário, senha e canal; prefira o stream secundário. Use Testar câmera antes de salvar. Para modelos diferentes de Intelbras/Dahua, informe a URL em Avançado.\n\n" +
             "No Monitor, dê dois toques na câmera para ampliar; dê dois toques novamente para voltar ao mosaico. Toque longo abre o menu; Voltar sai do Monitor. Apenas as primeiras câmeras até o tamanho do layout são iniciadas.\n\n" +
