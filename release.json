@@ -1,0 +1,13 @@
+{
+  "protocol": 1,
+  "repository": "Pr4Tes/cam-lite-android-releases",
+  "sources_repository": "Pr4Tes/cam-lite-android",
+  "manifest_url": "https://github.com/Pr4Tes/cam-lite-android-releases/releases/latest/download/version.json",
+  "channel": "stable",
+  "key_id": "prates-updates-2026",
+  "version": "1.4.0",
+  "version_code": 5,
+  "min_sdk": 26,
+  "apk": "CamLite-Android-v1.4.0.apk",
+  "publication": "awaiting-user-approval"
+}

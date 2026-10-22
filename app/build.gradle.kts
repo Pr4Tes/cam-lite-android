@@ -20,7 +20,8 @@ val verifyPermanentSigning = tasks.register("verifyPermanentSigning") {
 android {
     namespace = "com.camlite.android"
     compileSdk = 35
-    defaultConfig { applicationId = "com.camlite.android"; minSdk = 26; targetSdk = 35; versionCode = 4; versionName = "1.3"; testInstrumentationRunner = "com.camlite.android.SmokeInstrumentation" }
+    defaultConfig { applicationId = "com.camlite.android"; minSdk = 26; targetSdk = 35; versionCode = 5; versionName = "1.4.0"; testInstrumentationRunner = "com.camlite.android.SmokeInstrumentation" }
+    buildFeatures { buildConfig = true }
     signingConfigs.getByName("debug") {
         storeFile = permanentSigningStore
         storePassword = privateSigning.getProperty("storePassword")

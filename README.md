@@ -1,17 +1,25 @@
-# Cam Lite Android 1.3
+# Cam Lite Android 1.4.0
 
 Monitor Android nativo e local de até quatro câmeras IP RTSP. Kotlin, views Android e Media3 1.6.1, sem conta, nuvem, anúncios ou gravação. Android 8.0 (API 26) ou superior. O mesmo APK usa os decodificadores do sistema em ARM32 e ARM64; compatibilidade de vídeo depende do aparelho.
 
 ## Instalação
 
-1. Copie `dist/CamLite-Android-v1.3.apk` para o celular.
+1. Copie `dist/1.4.0/CamLite-Android-v1.4.0.apk` para o celular.
 2. Abra o arquivo pelo gerenciador de arquivos e permita instalar aplicativos dessa origem, quando solicitado pelo Android.
-3. Instale e abra **Cam Lite Android**. É um APK de debug instalável, para testes pessoais.
+3. Instale e abra **Cam Lite Android**. É um APK release para validação manual, com o certificado permanente original.
 4. Celular e câmeras devem ter acesso entre si pela rede local. Não é necessária permissão de câmera do celular, root ou acesso à nuvem.
 
-Instale a 1.3 sobre a 1.0/1.1/1.2 desta entrega, sem desinstalar ou limpar dados. O pacote e o certificado são os mesmos. Câmeras, senhas, ordem e preferências são migradas automaticamente; brilho anterior continua manual e o perfil de desempenho existente permanece. Se o Android informar assinatura diferente, preserve a instalação atual e não remova seus dados.
+Instale a 1.4.0 sobre a 1.0/1.1/1.2/1.3 desta entrega, sem desinstalar ou limpar dados. O pacote e o certificado são os mesmos. Câmeras, senhas, ordem e preferências são migradas automaticamente; brilho anterior continua manual e o perfil de desempenho existente permanece. Se o Android informar assinatura diferente, preserve a instalação atual e não remova seus dados.
 
-## Novidades da versão 1.3 — Positivo Q8 Lite T810
+## Novidades da 1.4.0
+
+Configurações → Atualizações permite consultar versões, notas, progresso e resultados. Verificação automática e notificações começam ativadas, com tentativa no máximo a cada 24 horas enquanto o app está ativo. As escolhas ficam salvas; não há instalação automática. A consulta HTTPS pública não transmite dados de câmeras. No Monitor, avisos aguardam a saída e consultas não recriam players.
+
+Metadados têm assinatura RSA incorporada à confiança do app; downloads verificam tamanho, SHA-256, identidade e certificado Android original. Instalação usa confirmação oficial Android após ação explícita. A fonte preparada é um repositório público separado, ainda pendente de disponibilidade/publicação aprovada. Sem publicação, a consulta pode falhar sem afetar o uso local.
+
+Consulte [ATUALIZACOES.md](ATUALIZACOES.md), [INSTALACAO-E-RECUPERACAO.md](INSTALACAO-E-RECUPERACAO.md), [PUBLICACAO.md](PUBLICACAO.md), [ASSINATURA.md](ASSINATURA.md) e [VALIDACAO.md](VALIDACAO.md). A build e 22 testes de lógica passaram; instalação, desbloqueio, vídeos e preservação de dados em Android real serão testados manualmente pelo usuário. Não foram executados testes prolongados.
+
+## Histórico: novidades da versão 1.3 — Positivo Q8 Lite T810
 
 O Monitor agora solicita **horizontal** na entrada e na abertura direta. As configurações de orientação anteriores permanecem armazenadas e continuam aplicadas fora do Monitor. O sistema/fabricante pode ignorar pedidos de orientação em janelas múltiplas ou modos especiais; o layout usa sempre as dimensões efetivas da janela.
 
@@ -40,7 +48,7 @@ A ficha técnica oficial da **família T810** confirma T310, tela de 8 polegadas
 
 ### Atualização preservando dados
 
-A identidade permanece `com.camlite.android`, versionCode 4. O arquivo `cameras.enc`, o envelope AES-GCM e o alias Android Keystore `cam-lite-v1` são os mesmos. Configurações sem versão das entregas 1.0/1.1 são tratadas como esquema 1 e migradas para esquema 2, com validação. Câmeras/credenciais/URLs/ordem e preferências anteriores são mantidas. Novas opções recebem padrões; brilho programado começa desativado para respeitar o brilho anterior.
+A identidade permanece `com.camlite.android`, versionCode 5. O arquivo `cameras.enc`, o envelope AES-GCM e o alias Android Keystore `cam-lite-v1` são os mesmos. Configurações sem versão das entregas 1.0/1.1 são tratadas como esquema 1 e migradas para esquema 2, com validação. Câmeras/credenciais/URLs/ordem e preferências anteriores são mantidas. Novas opções recebem padrões; brilho programado começa desativado para respeitar o brilho anterior.
 
 Antes de substituir o arquivo, o app grava um candidato criptografado, relê/descriptografa e valida seu conteúdo. Conserva a versão anterior em `cameras.enc.previous`, também criptografada, e usa gravação atômica com sincronização. Falhas de leitura/migração impedem sobrescrita por configuração vazia. Os arquivos auxiliares ficam somente nos dados privados do app, sem exportação de senhas.
 
@@ -135,10 +143,10 @@ Para uso prolongado, diminua o brilho, mantenha ventilação e configure manualm
 Requisitos: JDK 17, Android SDK com plataforma 35 e build tools 35.0.0. Gradle Wrapper 8.11.1, Android Gradle Plugin 8.9.2 e Kotlin 2.1.20. Configure `ANDROID_HOME` ou `sdk.dir` em um `local.properties` local.
 
 ```powershell
-.\gradlew.bat assembleDebug
+.\gradlew.bat testDebugUnitTest assembleRelease lintRelease
 ```
 
-Saída: `app/build/outputs/apk/debug/app-debug.apk`. A build exige a chave original e propriedades de assinatura externas, descritas em `ASSINATURA.md`. O certificado é verificado antes da compilação: chave ausente/diferente interrompe a build. Não é gerada uma nova chave automaticamente. Nenhuma chave privada ou senha acompanha o código. Este APK mantém a assinatura de debug original das primeiras entregas; mudar para outra assinatura impediria atualização direta dessas instalações.
+Saída: `app/build/outputs/apk/release/app-release.apk`. A build exige a chave original e propriedades de assinatura externas, descritas em `ASSINATURA.md`. O certificado é verificado antes da compilação: chave ausente/diferente interrompe a build. Não é gerada uma nova chave automaticamente. Nenhuma chave privada ou senha acompanha o código. Este APK mantém a assinatura de debug original das primeiras entregas; mudar para outra assinatura impediria atualização direta dessas instalações.
 
 ## Testes no celular
 
