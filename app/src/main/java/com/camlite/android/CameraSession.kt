@@ -17,6 +17,10 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.VideoSize
+import androidx.media3.common.AudioAttributes
+import androidx.media3.common.Tracks
+import androidx.media3.common.MimeTypes
+import androidx.media3.exoplayer.ExoPlaybackException
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
@@ -28,7 +32,12 @@ import androidx.media3.ui.PlayerView
 
 class CameraSession(context: Context, private val camera: CameraConfig,
     private val profile: PerformanceProfile = PerformanceProfile.NORMAL,
-    onDoubleTap: () -> Unit = {}, private val onAspectRatio: (Double) -> Unit = {}, onLongPress: () -> Unit) {
+    onDoubleTap: () -> Unit = {}, private val onAspectRatio: (Double) -> Unit = {},
+    private val onAudioUnavailable: () -> Unit = {}, onLongPress: () -> Unit) {
+    val cameraId get() = camera.id
+    private var audioEnabled = false
+    private var audioFailed = false
+    private val backlog = BacklogRecovery()
     val cell = FrameLayout(context).apply { setBackgroundColor(Color.BLACK) }
     private val video = PlayerView(context).apply {
         useController = false
@@ -62,6 +71,9 @@ class CameraSession(context: Context, private val camera: CameraConfig,
         override fun run() {
             if (!active) return
             val now = SystemClock.elapsedRealtime()
+            val current = player
+            if (current != null && backlog.sample(now, current.totalBufferedDuration, current.isPlaying && readySince != 0L && now - readySince >= 15000))
+                retry("Sincronizando imagem ao vivo…")
             // Transport timeout handles missing RTP. Never compare pixels or frames of static scenes.
             if (bufferingSince != 0L && now - bufferingSince > 25000) retry("Reconectando...")
             if (rendered && player?.isPlaying == true && readySince != 0L &&
@@ -101,10 +113,21 @@ class CameraSession(context: Context, private val camera: CameraConfig,
         // Detach the display surface without deselecting RTSP tracks or reopening sessions.
         video.player = if (visible) player else null
     }
+    fun setAudioEnabled(enabled: Boolean) {
+        if (enabled && !audioEnabled) audioFailed = false
+        audioEnabled = enabled
+        player?.let { p ->
+            p.volume = if (enabled && !audioFailed) 1f else 0f
+            p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
+                .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, !enabled || audioFailed).build()
+        }
+    }
+    fun synchronize(minimumDelayMs: Long = 0) { retry("Sincronizando imagem ao vivo…", minimumDelayMs) }
     private fun connect(networkKey: Long) {
         if (!active) return
         val network = networks.firstOrNull { it.network.networkHandle == networkKey } ?: return
         releasePlayer()
+        backlog.resetStream()
         status.visibility = View.VISIBLE
         status.text = "Conectando..."
         bufferingSince = SystemClock.elapsedRealtime()
@@ -112,18 +135,27 @@ class CameraSession(context: Context, private val camera: CameraConfig,
         lastVideoFrameMs = 0L
         try {
             val selector = DefaultTrackSelector(cell.context).apply {
-                parameters = buildUponParameters().setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, true).build()
+                parameters = buildUponParameters().setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, !audioEnabled || audioFailed).build()
             }
             val renderers = DefaultRenderersFactory(cell.context).setMediaCodecSelector { mime, secure, tunnel ->
                 MediaCodecSelector.DEFAULT.getDecoderInfos(mime, secure, tunnel).sortedByDescending { it.hardwareAccelerated }
             }
             val p = ExoPlayer.Builder(cell.context, renderers).setTrackSelector(selector)
-                .setLoadControl(DefaultLoadControl.Builder().setBufferDurationsMs(profile.minBufferMs, profile.maxBufferMs, 250, 500)
+                .setAudioAttributes(AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MOVIE).build(), false)
+                .setLoadControl(DefaultLoadControl.Builder().setBufferDurationsMs(profile.minBufferMs, profile.maxBufferMs, 100, 250)
                     .setTargetBufferBytes(profile.targetBytes).setPrioritizeTimeOverSizeThresholds(false).build()).build()
             player = p
             video.player = if (rendered) p else null
-            p.volume = 0f
+            p.volume = if (audioEnabled && !audioFailed) 1f else 0f
             val currentListener = object : Player.Listener {
+                override fun onTracksChanged(tracks: Tracks) {
+                    if (player !== p || !active || !audioEnabled || audioFailed || tracks.groups.isEmpty()) return
+                    if (tracks.groups.none { it.type == C.TRACK_TYPE_AUDIO && it.isSupported }) {
+                        audioFailed = true; p.volume = 0f
+                        p.trackSelectionParameters = p.trackSelectionParameters.buildUpon().setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, true).build()
+                        onAudioUnavailable()
+                    }
+                }
                 override fun onVideoSizeChanged(videoSize: VideoSize) {
                     if (player !== p || !active || videoSize.height <= 0 || videoSize.width <= 0) return
                     val ratio = videoSize.width.toDouble() * videoSize.pixelWidthHeightRatio / videoSize.height
@@ -143,6 +175,9 @@ class CameraSession(context: Context, private val camera: CameraConfig,
                 }
                 override fun onPlayerError(error: PlaybackException) {
                     if (player !== p || !active) return
+                    if (audioEnabled && !audioFailed && MimeTypes.isAudio((error as? ExoPlaybackException)?.rendererFormat?.sampleMimeType)) {
+                        audioFailed = true; onAudioUnavailable(); retry("Retomando vídeo sem áudio…"); return
+                    }
                     val decoderError = error.errorCode in 4000..4999
                     if (decoderError) decoderFailures++
                     retry(if (decoderError) "Decoder indisponível. Use substream H.264\nou reduza o layout. Reconectando..." else "Reconectando...",
