@@ -12,6 +12,9 @@ import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.graphics.Color
+import android.media.AudioManager
+import android.media.AudioFocusRequest
+import android.media.AudioAttributes
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -26,6 +29,8 @@ import android.view.WindowInsets
 import android.view.WindowInsetsController
 import android.view.WindowManager
 import android.widget.*
+import com.camlite.android.updates.UpdateManager
+import com.camlite.android.updates.UpdateScreen
 
 class MainActivity : Activity() {
     private lateinit var store: SecureStore
@@ -34,6 +39,12 @@ class MainActivity : Activity() {
     private var monitor = false
     private var foreground = false
     private val sessions = mutableListOf<CameraSession>()
+    private val audioManager by lazy { getSystemService(AudioManager::class.java) }
+    private var audioFocus: AudioFocusRequest? = null
+    private val noisyReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) { muteSessionAudio() }
+    }
+    private var noisyRegistered = false
     private var mosaic: MosaicView? = null
     private lateinit var networkMonitor: NetworkMonitor
     private var testSession: CameraSession? = null
@@ -48,9 +59,17 @@ class MainActivity : Activity() {
     private val clockReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) { updateBrightness() }
     }
+    private lateinit var updates: UpdateManager
+    private lateinit var updateScreen: UpdateScreen
+    private var requestedUpdatePanel = false
+    private val updateListener: () -> Unit = { if (foreground) updateScreen.refresh() }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        volumeControlStream = AudioManager.STREAM_MUSIC
+        updates = UpdateManager.get(this)
+        updateScreen = UpdateScreen(this,updates) { monitor }
+        requestedUpdatePanel = intent.getBooleanExtra("open_updates",false)
         // RTSP errors can contain URLs. Suppress library logs to protect embedded credentials.
         androidx.media3.common.util.Log.setLogLevel(androidx.media3.common.util.Log.LOG_LEVEL_OFF)
         window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
@@ -86,13 +105,33 @@ class MainActivity : Activity() {
     }
     override fun onStart() {
         super.onStart(); foreground = true; networkMonitor.start()
+        if (Build.VERSION.SDK_INT >= 33) registerReceiver(noisyReceiver, IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY), Context.RECEIVER_NOT_EXPORTED)
+        else registerReceiver(noisyReceiver, IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY))
+        noisyRegistered = true
         val filter = IntentFilter().apply { addAction(Intent.ACTION_TIME_CHANGED); addAction(Intent.ACTION_TIMEZONE_CHANGED) }
         if (Build.VERSION.SDK_INT >= 33) registerReceiver(clockReceiver, filter, Context.RECEIVER_NOT_EXPORTED) else registerReceiver(clockReceiver, filter)
         clockRegistered = true
         if (monitor) buildMonitor() else updateBrightness()
+        updates.monitor(monitor)
+        updates.observe(updateListener)
+        if (requestedUpdatePanel && !monitor) { requestedUpdatePanel=false; updateScreen.show() }
+    }
+    override fun onResume() { super.onResume(); if (::updateScreen.isInitialized) updateScreen.refresh() }
+    override fun onRequestPermissionsResult(requestCode:Int, permissions:Array<out String>, grantResults:IntArray) {
+        super.onRequestPermissionsResult(requestCode,permissions,grantResults)
+        if(requestCode==1400) updateScreen.refresh()
+    }
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        if (intent.getBooleanExtra("open_updates",false)) {
+            requestedUpdatePanel=true
+            if (!monitor && foreground) { requestedUpdatePanel=false; updateScreen.show() }
+        }
     }
     override fun onStop() {
         foreground = false
+        if (noisyRegistered) { unregisterReceiver(noisyReceiver); noisyRegistered = false }
+        updates.unobserve(updateListener)
         screenHandler.removeCallbacksAndMessages(null)
         if (clockRegistered) { unregisterReceiver(clockReceiver); clockRegistered = false }
         monitorDialog?.dismiss(); monitorDialog = null
@@ -102,7 +141,7 @@ class MainActivity : Activity() {
         networkMonitor.stop()
         super.onStop()
     }
-    override fun onDestroy() { stopSessions(); testSession?.stop(); networkMonitor.stop(); super.onDestroy() }
+    override fun onDestroy() { updateScreen.close(); stopSessions(); testSession?.stop(); networkMonitor.stop(); super.onDestroy() }
     override fun onSaveInstanceState(outState: Bundle) { outState.putBoolean("monitor", monitor); super.onSaveInstanceState(outState) }
     override fun onConfigurationChanged(newConfig: Configuration) { super.onConfigurationChanged(newConfig); root.requestLayout() }
     override fun dispatchTouchEvent(event: MotionEvent): Boolean {
@@ -125,11 +164,13 @@ class MainActivity : Activity() {
         return try { store.save(config); true } catch (_: Exception) { toast("Não foi possível salvar. Verifique o armazenamento."); false }
     }
     private fun stopSessions() {
+        muteSessionAudio()
         screenHandler.removeCallbacks(autoLock)
         touchShield?.let { root.removeView(it) }; touchShield = null
         sessions.forEach { it.stop() }; sessions.clear(); mosaic = null
     }
     private fun showScreen() {
+        updates.monitor(monitor)
         applyOrientation()
         stopSessions()
         root.removeAllViews()
@@ -158,15 +199,19 @@ class MainActivity : Activity() {
         }
         list.addView(button("Adicionar câmera") { cameraEditor(null) }.apply { isEnabled = config.cameras.size < 4 && !loadFailed })
         list.addView(button("Configurações") { settingsDialog() })
+        list.addView(button("Som das câmeras") { audioDialog() })
+        list.addView(button("Atualizações") { updateScreen.show() })
         list.addView(button("Informações e ajuda") { helpDialog() })
         list.addView(text("Em aparelhos antigos: H.264, substream de 640 × 360/480 e 10–15 FPS.", 14f))
         root.addView(ScrollView(this).apply { addView(list) }, FrameLayout.LayoutParams(-1, -1))
+        if (requestedUpdatePanel) { requestedUpdatePanel=false; updateScreen.show() }
     }
     private fun move(index: Int, offset: Int) {
         java.util.Collections.swap(config.cameras, index, index + offset)
         if (save()) showScreen() else java.util.Collections.swap(config.cameras, index, index + offset)
     }
     private fun buildMonitor() {
+        updates.monitor(true)
         applyOrientation()
         stopSessions(); root.removeAllViews()
         val grid = MosaicView(this, config.settings.layout)
@@ -177,11 +222,13 @@ class MainActivity : Activity() {
             if (camera == null) {
                 grid.addView(FrameLayout(this).apply { setBackgroundColor(Color.BLACK); setOnLongClickListener { monitorMenu(); true } })
             } else {
-                val session = CameraSession(this, camera, config.settings.performance, onDoubleTap = { toggleCamera(i) }, onAspectRatio = { grid.setVideoAspectRatio(i, it) }) { monitorMenu() }
+                val session = CameraSession(this, camera, config.settings.performance, onDoubleTap = { toggleCamera(i) }, onAspectRatio = { grid.setVideoAspectRatio(i, it) },
+                    onAudioUnavailable = { toast("${camera.name}: áudio ausente ou incompatível. Ative áudio AAC no stream da câmera; o vídeo continua.") }) { monitorMenu() }
                 session.updateNetworks(networkMonitor.networks)
                 sessions.add(session); grid.addView(session.cell); session.start(i * 1000L)
             }
         }
+        applySessionAudio()
         applyWindow()
         lockTouches()
     }
@@ -195,9 +242,38 @@ class MainActivity : Activity() {
         if (touchShield != null || monitorDialog != null) return
         screenHandler.removeCallbacks(autoLock)
         monitorDialog = AlertDialog.Builder(this).setTitle("Modo Monitor")
-            .setItems(arrayOf("Continuar monitorando", "Bloquear toques", "Sair do Modo Monitor", "Fechar aplicativo")) { _, which ->
-                when (which) { 1 -> if (config.settings.screen.touchLock) lockTouches() else toast("Ative o bloqueio em Configurações → Tela."); 2 -> leaveMonitor(); 3 -> finish() }
+            .setItems(arrayOf("Continuar monitorando", "Bloquear toques", "Sair do Modo Monitor", "Fechar aplicativo", "Som de uma câmera", "Sincronizar imagens agora")) { _, which ->
+                when (which) { 1 -> if (config.settings.screen.touchLock) lockTouches() else toast("Ative o bloqueio em Configurações → Tela."); 2 -> leaveMonitor(); 3 -> finish(); 4 -> audioDialog(); 5 -> sessions.forEachIndexed { i, session -> session.synchronize(i * 1000L) } }
             }.create().apply { setOnDismissListener { monitorDialog = null; scheduleAutoLock() }; show() }
+    }
+    private fun muteSessionAudio() {
+        sessions.forEach { it.setAudioEnabled(false) }
+        audioFocus?.let { audioManager.abandonAudioFocusRequest(it) }; audioFocus = null
+    }
+    private fun applySessionAudio() {
+        muteSessionAudio()
+        if (!foreground || sessions.none { it.cameraId == config.settings.audioCameraId }) return
+        val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+            .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_MOVIE).build())
+            .setOnAudioFocusChangeListener({ change -> if (change != AudioManager.AUDIOFOCUS_GAIN) muteSessionAudio() }, screenHandler).build()
+        if (audioManager.requestAudioFocus(request) != AudioManager.AUDIOFOCUS_REQUEST_GRANTED) { toast("Áudio indisponível: outro aplicativo está usando o som."); return }
+        audioFocus = request
+        ExclusiveAudio.apply(sessions.map { it.cameraId }, config.settings.audioCameraId) { i, enabled -> sessions[i].setAudioEnabled(enabled) }
+    }
+    private fun audioDialog() {
+        val cameras = config.cameras.take(config.settings.layout)
+        val labels = arrayOf("Sem som") + cameras.map { it.name }
+        val selected = cameras.indexOfFirst { it.id == config.settings.audioCameraId } + 1
+        val dialog = AlertDialog.Builder(this).setTitle("Ouvir uma câmera — volume de mídia")
+            .setSingleChoiceItems(labels, selected) { d, index ->
+                val previous = config.settings.audioCameraId
+                config.settings.audioCameraId = cameras.getOrNull(index - 1)?.id.orEmpty()
+                if (save()) applySessionAudio() else config.settings.audioCameraId = previous
+                d.dismiss()
+            }.setNegativeButton("Cancelar", null).create()
+        screenHandler.removeCallbacks(autoLock)
+        dialog.setOnDismissListener { scheduleAutoLock() }
+        dialog.show()
     }
     private fun lockTouches() {
         screenHandler.removeCallbacks(autoLock)
@@ -332,6 +408,7 @@ class MainActivity : Activity() {
     private fun settingsDialog() {
         val old = config.settings.copy(screen = config.settings.screen.copy())
         val form = column()
+        form.addView(button("Atualizações") { updateScreen.show() })
         val layout = spinner(form, "Layout (mostra as primeiras câmeras na ordem)", arrayOf("1 câmera", "2 câmeras", "3 câmeras", "4 câmeras"), old.layout - 1)
         val orientation = spinner(form, "Orientação das telas de configuração (Monitor sempre horizontal)", arrayOf("Automática", "Horizontal", "Vertical"), old.orientation.coerceIn(0, 2))
         val performance = spinner(form, "Desempenho", PerformanceProfile.entries.map { it.label }.toTypedArray(), old.performance.ordinal)
@@ -398,7 +475,7 @@ class MainActivity : Activity() {
         return if (hour in 0..23 && minute in 0..59) hour * 60 + minute else null
     }
     private fun helpDialog() {
-        AlertDialog.Builder(this).setTitle("Cam Lite Android 1.3").setMessage(
+        AlertDialog.Builder(this).setTitle("Cam Lite Android ${BuildConfig.VERSION_NAME}").setMessage(
             "Monitor local de até 4 câmeras RTSP H.264, via TCP. Sem nuvem, conta ou gravação.\n\n" +
             "Cadastre IP, usuário, senha e canal; prefira o stream secundário. Use Testar câmera antes de salvar. Para modelos diferentes de Intelbras/Dahua, informe a URL em Avançado.\n\n" +
             "No Monitor, dê dois toques na câmera para ampliar; dê dois toques novamente para voltar ao mosaico. Toque longo abre o menu; Voltar sai do Monitor. Apenas as primeiras câmeras até o tamanho do layout são iniciadas.\n\n" +
@@ -406,6 +483,8 @@ class MainActivity : Activity() {
             "Tela: configure brilho manual ou horários de dia/noite. O bloqueio de toques começa ativo no Monitor; toque e deslize a barra até o fim para desbloquear. Toque longo abre o menu quando desbloqueado. Voltar sempre sai do Monitor.\n\n" +
             "Monitor horizontal e layout responsivo. Em tablets de 2 GB, use Econômico e aumente de 1 até 4 câmeras conforme a capacidade real. Quatro decodificadores não são garantidos.\n\n" +
             "Credenciais protegidas pelo Android Keystore. Configure manualmente o limite de carga de 80% quando disponível; mantenha ventilação e brilho baixo.\n\n" +
+            "Som: escolha uma câmera em Som das câmeras ou no menu do Monitor. Ative áudio AAC no stream da câmera e ajuste o volume de mídia. Somente uma câmera é ouvida; não há microfone ou conversa de retorno.\n\n" +
+            "Atraso: buffers menores e recuperação limitada quando há mais de 4 segundos enfileirados por 15 segundos. Sincronizar imagens agora reabre os streams gradualmente. Não mede atraso câmera-tela.\n\n" +
             "Compatibilidade e quantidade de vídeos dependem dos decodificadores do celular. A estabilidade 24/7 precisa ser verificada no seu aparelho."
         ).setPositiveButton("Fechar", null).show()
     }
