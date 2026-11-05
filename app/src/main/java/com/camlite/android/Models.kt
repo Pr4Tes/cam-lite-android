@@ -36,14 +36,14 @@ data class CameraConfig(
 
 data class Settings(var layout: Int = 4, var orientation: Int = 0, var keepOn: Boolean = true,
     var brightness: Int = -1, var startMonitor: Boolean = false, var home: Boolean = false,
-    var performance: PerformanceProfile = PerformanceProfile.NORMAL, var screen: ScreenSettings = ScreenSettings()) {
+    var performance: PerformanceProfile = PerformanceProfile.NORMAL, var screen: ScreenSettings = ScreenSettings(), var audioCameraId: String = "") {
     fun json() = JSONObject().put("layout", layout).put("orientation", orientation).put("keepOn", keepOn)
-        .put("brightness", brightness).put("startMonitor", startMonitor).put("home", home).put("performance", performance.name).put("screen", screen.json())
+        .put("brightness", brightness).put("startMonitor", startMonitor).put("home", home).put("performance", performance.name).put("screen", screen.json()).put("audioCameraId", audioCameraId)
     companion object {
         fun from(j: JSONObject) = Settings(j.optInt("layout", 4).coerceIn(1, 4), j.optInt("orientation"), j.optBoolean("keepOn", true),
             j.optInt("brightness", -1).coerceIn(-1, 100), j.optBoolean("startMonitor"), j.optBoolean("home"),
             PerformanceProfile.entries.firstOrNull { it.name == j.optString("performance") } ?: PerformanceProfile.NORMAL,
-            j.optJSONObject("screen")?.let { ScreenSettings.from(it) } ?: ScreenSettings())
+            j.optJSONObject("screen")?.let { ScreenSettings.from(it) } ?: ScreenSettings(), j.optString("audioCameraId", ""))
     }
 }
 
