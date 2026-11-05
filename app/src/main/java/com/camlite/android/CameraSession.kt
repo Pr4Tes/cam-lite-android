@@ -38,6 +38,7 @@ class CameraSession(context: Context, private val camera: CameraConfig,
     private var audioEnabled = false
     private var audioFailed = false
     private val backlog = BacklogRecovery()
+    private val frameLag = FrameLagTracker()
     val cell = FrameLayout(context).apply { setBackgroundColor(Color.BLACK) }
     private val video = PlayerView(context).apply {
         useController = false
@@ -72,7 +73,7 @@ class CameraSession(context: Context, private val camera: CameraConfig,
             if (!active) return
             val now = SystemClock.elapsedRealtime()
             val current = player
-            if (current != null && backlog.sample(now, current.totalBufferedDuration, current.isPlaying && readySince != 0L && now - readySince >= 15000))
+            if (current != null && backlog.sample(now, maxOf(current.totalBufferedDuration, if (rendered) frameLag.lagMs else 0), current.isPlaying && readySince != 0L && now - readySince >= 15000))
                 retry("Sincronizando imagem ao vivo…")
             // Transport timeout handles missing RTP. Never compare pixels or frames of static scenes.
             if (bufferingSince != 0L && now - bufferingSince > 25000) retry("Reconectando...")
@@ -110,6 +111,7 @@ class CameraSession(context: Context, private val camera: CameraConfig,
         if (visible == rendered) return
         if (visible && !rendered) lastVideoFrameMs = SystemClock.elapsedRealtime()
         rendered = visible
+        frameLag.reset()
         // Detach the display surface without deselecting RTSP tracks or reopening sessions.
         video.player = if (visible) player else null
     }
@@ -128,6 +130,7 @@ class CameraSession(context: Context, private val camera: CameraConfig,
         val network = networks.firstOrNull { it.network.networkHandle == networkKey } ?: return
         releasePlayer()
         backlog.resetStream()
+        frameLag.reset()
         status.visibility = View.VISIBLE
         status.text = "Conectando..."
         bufferingSince = SystemClock.elapsedRealtime()
@@ -187,7 +190,10 @@ class CameraSession(context: Context, private val camera: CameraConfig,
             listener = currentListener
             p.addListener(currentListener)
             // Timestamp only, no pixel inspection: static scenes still deliver video frames.
-            p.setVideoFrameMetadataListener { _, _, _, _ -> if (player === p) lastVideoFrameMs = SystemClock.elapsedRealtime() }
+            p.setVideoFrameMetadataListener { ptsUs, _, _, _ -> if (player === p) {
+                val now = SystemClock.elapsedRealtime(); lastVideoFrameMs = now
+                if (rendered) frameLag.frame(now, ptsUs)
+            } }
             val source = RtspMediaSource.Factory().setForceUseRtpTcp(true).setTimeoutMs(12000)
                 .setSocketFactory(network.network.socketFactory)
                 .createMediaSource(mediaItem)
