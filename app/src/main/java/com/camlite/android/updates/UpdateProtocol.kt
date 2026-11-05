@@ -74,8 +74,8 @@ class UpdateProtocol(private val publicKey: PublicKey) {
             val size = j.getLong("size")
             val hash = j.getString("sha256")
             if (size !in 1..UpdateSource.MAX_APK_SIZE || !hash.matches(Regex("[a-f0-9]{64}"))) throw UpdateRejected("Tamanho ou hash inválido.")
-            val published = Instant.parse(j.getString("published_at"))
-            val expires = Instant.parse(j.getString("expires_at"))
+            val published = parseTimestamp(j.getString("published_at"))
+            val expires = parseTimestamp(j.getString("expires_at"))
             if (published.isAfter(now.plusSeconds(300)) || !expires.isAfter(now) || !expires.isAfter(published) ||
                 expires.isAfter(published.plusSeconds(90L * 86400))) throw UpdateRejected("Metadados vencidos ou datas inválidas. Confira o relógio do aparelho.")
             val notes = j.optString("notes")
@@ -84,6 +84,11 @@ class UpdateProtocol(private val publicKey: PublicKey) {
         } catch (e: UpdateRejected) { throw e } catch (_: Exception) { throw UpdateRejected("Campos dos metadados inválidos.") }
     }
     companion object {
+        fun parseTimestamp(value: String): Instant = try {
+            java.time.OffsetDateTime.parse(value, java.time.format.DateTimeFormatter.ISO_OFFSET_DATE_TIME).toInstant()
+        } catch (_: java.time.format.DateTimeParseException) {
+            throw UpdateRejected("Datas dos metadados inválidas. Consulte novamente ou confira a publicação oficial.")
+        }
         fun publicKey(pem: String): PublicKey {
             val der = Base64.getMimeDecoder().decode(pem.replace("-----BEGIN PUBLIC KEY-----", "").replace("-----END PUBLIC KEY-----", ""))
             return KeyFactory.getInstance("RSA").generatePublic(X509EncodedKeySpec(der))
