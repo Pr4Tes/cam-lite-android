@@ -16,6 +16,12 @@ import java.util.Base64
 import java.util.concurrent.atomic.AtomicBoolean
 
 class UpdateSecurityTest {
+    @Test fun timestampsAcceptUtcAndExplicitOffsetsButRejectMissingZone() {
+        assertEquals(Instant.parse("2026-11-05T17:01:27.465410500Z"), UpdateProtocol.parseTimestamp("2026-11-05T17:01:27.4654105+00:00"))
+        assertEquals(Instant.parse("2026-11-05T17:01:27Z"), UpdateProtocol.parseTimestamp("2026-11-05T13:01:27-04:00"))
+        reject { UpdateProtocol.parseTimestamp("2026-11-05T17:01:27") }
+        reject { UpdateProtocol.parseTimestamp("invalid") }
+    }
     companion object {
         private val keys=KeyPairGenerator.getInstance("RSA").apply { initialize(3072) }.generateKeyPair()
         private val now=Instant.parse("2026-10-21T12:00:00Z")
