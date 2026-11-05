@@ -21,3 +21,22 @@ class BacklogRecovery {
     }
     fun resetStream() { excessiveSince = null }
 }
+
+/** Tracks growth since the fastest observed presentation, not absolute camera latency. */
+class FrameLagTracker {
+    private var anchorTime = 0L
+    private var anchorPts = 0L
+    private var previousPts: Long? = null
+    private var minimum = 0L
+    @Volatile var lagMs = 0L; private set
+    @Synchronized fun reset() { previousPts = null; lagMs = 0 }
+    @Synchronized fun frame(nowMs: Long, ptsUs: Long) {
+        if (previousPts == null || ptsUs < previousPts!!) {
+            anchorTime = nowMs; anchorPts = ptsUs; minimum = 0
+        }
+        previousPts = ptsUs
+        val delta = nowMs - anchorTime - (ptsUs - anchorPts) / 1000
+        minimum = minOf(minimum, delta)
+        lagMs = maxOf(0, delta - minimum)
+    }
+}
