@@ -36,14 +36,14 @@ data class CameraConfig(
 
 data class Settings(var layout: Int = 4, var orientation: Int = 0, var keepOn: Boolean = true,
     var brightness: Int = -1, var startMonitor: Boolean = false, var home: Boolean = false,
-    var performance: PerformanceProfile = PerformanceProfile.NORMAL, var screen: ScreenSettings = ScreenSettings(), var audioCameraId: String = "") {
+    var performance: PerformanceProfile = PerformanceProfile.NORMAL, var screen: ScreenSettings = ScreenSettings(), var audioCameraId: String = "", var audioSchedule: AudioSchedule = AudioSchedule()) {
     fun json() = JSONObject().put("layout", layout).put("orientation", orientation).put("keepOn", keepOn)
-        .put("brightness", brightness).put("startMonitor", startMonitor).put("home", home).put("performance", performance.name).put("screen", screen.json()).put("audioCameraId", audioCameraId)
+        .put("brightness", brightness).put("startMonitor", startMonitor).put("home", home).put("performance", performance.name).put("screen", screen.json()).put("audioCameraId", audioCameraId).put("audioSchedule", audioSchedule.json())
     companion object {
         fun from(j: JSONObject) = Settings(j.optInt("layout", 4).coerceIn(1, 4), j.optInt("orientation"), j.optBoolean("keepOn", true),
             j.optInt("brightness", -1).coerceIn(-1, 100), j.optBoolean("startMonitor"), j.optBoolean("home"),
             PerformanceProfile.entries.firstOrNull { it.name == j.optString("performance") } ?: PerformanceProfile.NORMAL,
-            j.optJSONObject("screen")?.let { ScreenSettings.from(it) } ?: ScreenSettings(), j.optString("audioCameraId", ""))
+            j.optJSONObject("screen")?.let { ScreenSettings.from(it) } ?: ScreenSettings(), j.optString("audioCameraId", ""), j.optJSONObject("audioSchedule")?.let { AudioSchedule.from(it) } ?: AudioSchedule())
     }
 }
 
@@ -53,6 +53,7 @@ data class AppConfig(val cameras: MutableList<CameraConfig> = mutableListOf(), v
         cameras.forEach { require(it.id.isNotBlank() && it.name.isNotBlank() && (it.host.isNotBlank() || it.customUrl.isNotBlank()) && it.port in 1..65535 && it.channel > 0) }
         require(settings.layout in 1..4 && settings.orientation in 0..2 && settings.brightness in -1..100)
         settings.screen.validate()
+        settings.audioSchedule.validate()
     }
     fun json() = JSONObject().put("schemaVersion", SCHEMA_VERSION).put("cameras", JSONArray().apply { cameras.forEach { put(it.json()) } }).put("settings", settings.json())
     companion object {
