@@ -1,0 +1,11 @@
+# Cam Lite Android 1.6.0 — áudio programado e recuperação da imagem
+
+Som das câmeras abre um formulário com câmera, horário inicial/final e dias da semana. Exemplo padrão: 07:00–17:30 de segunda a sábado, domingo desligado. Escolha a câmera Loja e salve no aparelho; a instalação não conhece os nomes das câmeras do usuário. Sem som ou nenhum dia marcado mantém o áudio desligado. Horários iguais são recusados. Faixas noturnas pertencem ao dia em que começam.
+
+A câmera de áudio já selecionada é preservada na atualização e passa a respeitar a programação padrão quando ainda não houver agenda salva. Todas as opções podem ser alteradas depois. A agenda usa o relógio/fuso local; reavalia ao abrir o Monitor e em mudanças de data/hora/fuso. Um callback na próxima transição liga/desliga o áudio; sem serviço permanente, polling ou reprodução em segundo plano. App precisa estar aberto no Monitor. Chamadas/perda de foco e remoção do fone silenciam; para reativar antes da próxima faixa, selecione/salve novamente dentro do horário. Mantida uma câmera por vez e a necessidade de áudio compatível, como AAC.
+
+Imagem: mantidos buffers curtos da 1.5.x. Novo acompanhamento do crescimento do atraso entre timestamps de vídeo e relógio monotônico. Usa o maior entre fila local e crescimento observado; mais de 4 segundos persistentes por 15 segundos após estabilização pode reabrir só a câmera afetada. Limite de uma recuperação por 2 minutos por câmera. Reinício de timestamps e retorno de superfície oculta reiniciam a referência. Não compara pixels de cenas estáticas e não reinicia periodicamente streams saudáveis. Sincronizar imagens agora continua disponível.
+
+Essas medidas não medem atraso absoluto entre captura e tela; rede, encoder e capacidade do tablet ainda influenciam. Não se promete imagem sem atraso. O procedimento de atualização preserva pacote, certificado, câmeras, credenciais e demais preferências.
+
+Validação: 36 testes JVM aprovados, sem falhas/erros/ignorados. Incluem limites 07:00/17:30, domingo, sábado para domingo, madrugada, nenhum dia, persistência/migração, fuso/DST e crescimento/reset de atraso, além dos testes existentes. Build release e lint aprovados sem erros. Sem Android conectado: transições reais de áudio, foco e latência física ainda precisam ser conferidos no tablet. Instale por cima da versão atual, sem limpar dados.
