@@ -54,10 +54,11 @@ class MainActivity : Activity() {
     private var monitorDialog: AlertDialog? = null
     private val screenHandler = Handler(Looper.getMainLooper())
     private val brightnessChange = Runnable { updateBrightness() }
+    private val audioTransition = Runnable { applySessionAudio() }
     private val autoLock = Runnable { if (monitorDialog == null) lockTouches() }
     private var clockRegistered = false
     private val clockReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context?, intent: Intent?) { updateBrightness() }
+        override fun onReceive(context: Context?, intent: Intent?) { updateBrightness(); applySessionAudio() }
     }
     private lateinit var updates: UpdateManager
     private lateinit var updateScreen: UpdateScreen
@@ -164,6 +165,7 @@ class MainActivity : Activity() {
         return try { store.save(config); true } catch (_: Exception) { toast("Não foi possível salvar. Verifique o armazenamento."); false }
     }
     private fun stopSessions() {
+        screenHandler.removeCallbacks(audioTransition)
         muteSessionAudio()
         screenHandler.removeCallbacks(autoLock)
         touchShield?.let { root.removeView(it) }; touchShield = null
@@ -251,7 +253,12 @@ class MainActivity : Activity() {
         audioFocus?.let { audioManager.abandonAudioFocusRequest(it) }; audioFocus = null
     }
     private fun applySessionAudio() {
+        screenHandler.removeCallbacks(audioTransition)
         muteSessionAudio()
+        if (!foreground || !monitor) return
+        val now = java.time.ZonedDateTime.now()
+        if (config.settings.audioCameraId.isNotEmpty()) config.settings.audioSchedule.nextDelayMs(now)?.let { screenHandler.postDelayed(audioTransition, it) }
+        if (!config.settings.audioSchedule.active(now)) return
         if (!foreground || sessions.none { it.cameraId == config.settings.audioCameraId }) return
         val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
             .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_MOVIE).build())
@@ -264,16 +271,28 @@ class MainActivity : Activity() {
         val cameras = config.cameras.take(config.settings.layout)
         val labels = arrayOf("Sem som") + cameras.map { it.name }
         val selected = cameras.indexOfFirst { it.id == config.settings.audioCameraId } + 1
-        val dialog = AlertDialog.Builder(this).setTitle("Ouvir uma câmera — volume de mídia")
-            .setSingleChoiceItems(labels, selected) { d, index ->
-                val previous = config.settings.audioCameraId
-                config.settings.audioCameraId = cameras.getOrNull(index - 1)?.id.orEmpty()
-                if (save()) applySessionAudio() else config.settings.audioCameraId = previous
-                d.dismiss()
-            }.setNegativeButton("Cancelar", null).create()
+        val form = column()
+        val camera = spinner(form,"Câmera com som programado",labels,selected)
+        val oldSchedule = config.settings.audioSchedule
+        val start = EditText(this).apply { setSingleLine(); setText(timeText(oldSchedule.startMinute)); hint="07:00" }; form.addView(text("Início (HH:mm)")); form.addView(start)
+        val end = EditText(this).apply { setSingleLine(); setText(timeText(oldSchedule.endMinute)); hint="17:30" }; form.addView(text("Fim (HH:mm)")); form.addView(end)
+        val names = listOf("Segunda","Terça","Quarta","Quinta","Sexta","Sábado","Domingo")
+        val days = names.mapIndexed { i,name -> CheckBox(this).apply { text=name; isChecked=i+1 in oldSchedule.days; form.addView(this) } }
+        form.addView(text("Fora do horário, o som fica desligado. Horário do aparelho. Se o fim for antes do início, termina no dia seguinte; os dias marcados são os de início. Nenhum dia marcado mantém o som desligado. O app precisa estar aberto no Monitor.",14f))
+        val dialog = AlertDialog.Builder(this).setTitle("Programação do som")
+            .setView(ScrollView(this).apply { addView(form) }).setPositiveButton("Salvar",null).setNegativeButton("Cancelar", null).create()
         screenHandler.removeCallbacks(autoLock)
         dialog.setOnDismissListener { scheduleAutoLock() }
         dialog.show()
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+            val from = parseTime(start.text.toString()); val to = parseTime(end.text.toString())
+            if (from == null || to == null || from == to) { toast("Informe horários diferentes no formato HH:mm."); return@setOnClickListener }
+            val oldId = config.settings.audioCameraId
+            config.settings.audioCameraId = cameras.getOrNull(camera.selectedItemPosition-1)?.id.orEmpty()
+            config.settings.audioSchedule = AudioSchedule(from,to,days.mapIndexedNotNull { i,check -> (i+1).takeIf { check.isChecked } }.toSet())
+            if (save()) { applySessionAudio(); dialog.dismiss() }
+            else { config.settings.audioCameraId=oldId; config.settings.audioSchedule=oldSchedule }
+        }
     }
     private fun lockTouches() {
         screenHandler.removeCallbacks(autoLock)
