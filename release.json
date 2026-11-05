@@ -5,9 +5,9 @@
   "manifest_url": "https://github.com/Pr4Tes/cam-lite-android-releases/releases/latest/download/version.json",
   "channel": "stable",
   "key_id": "prates-updates-2026",
-  "version": "1.5.1",
-  "version_code": 9,
+  "version": "1.6.0",
+  "version_code": 10,
   "min_sdk": 26,
-  "apk": "CamLite-Android-v1.5.1.apk",
+  "apk": "CamLite-Android-v1.6.0.apk",
   "publication": "published"
 }
