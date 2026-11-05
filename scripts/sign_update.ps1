@@ -28,7 +28,7 @@ try {
         package_type='android-apk'; min_os_build=0; min_sdk=[int]$release.min_sdk
         url="https://github.com/$($release.repository)/releases/download/v$($release.version)/$($release.apk)"
         size=$packageFile.Length; sha256=(Get-FileHash -LiteralPath $packageFile.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
-        published_at=$now.ToString('o'); expires_at=$now.AddDays(90).ToString('o')
+        published_at=$now.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'",[Globalization.CultureInfo]::InvariantCulture); expires_at=$now.AddDays(90).UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'",[Globalization.CultureInfo]::InvariantCulture)
         notes=[IO.File]::ReadAllText((Resolve-Path -LiteralPath $NotesFile)); mandatory=$false; key_id=$release.key_id
     }
     $bytes=[Text.UTF8Encoding]::new($false).GetBytes(($manifest | ConvertTo-Json -Depth 5 -Compress))
