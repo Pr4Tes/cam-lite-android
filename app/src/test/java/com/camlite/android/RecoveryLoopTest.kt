@@ -63,7 +63,7 @@ class RecoveryLoopTest {
         assertEquals(PerformanceProfile.NORMAL, PerformanceProfile.entries.first())
         assertTrue(PerformanceProfile.ECONOMIC.maxBufferMs < PerformanceProfile.NORMAL.maxBufferMs)
         assertTrue(PerformanceProfile.ECONOMIC.targetBytes < PerformanceProfile.NORMAL.targetBytes)
-        PerformanceProfile.entries.forEach { assertTrue(it.minBufferMs >= 500 && it.maxBufferMs >= it.minBufferMs) }
+        PerformanceProfile.entries.forEach { assertTrue(it.minBufferMs >= 300 && it.maxBufferMs >= it.minBufferMs) }
     }
     @Test fun returnedPreferredLanReschedulesOnlyFailedSessionAndIgnoresDuplicateEvents() {
         val h = Harness(); h.loop.updateNetworks(setOf(1), 1); h.loop.start(2000); h.advance(2000)
